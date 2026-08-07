@@ -1,0 +1,38 @@
+{
+  "budgets": {
+    "Food": 200.0,
+    "Transport": 100.0
+  },
+  "transactions": [
+    {
+      "type": "income",
+      "amount": 1000.0,
+      "date": "2026-08-01",
+      "category": "Salary"
+    },
+    {
+      "type": "expense",
+      "amount": 45.0,
+      "date": "2026-08-02",
+      "category": "Food",
+      "over_budget": false,
+      "approaching_limit": false
+    },
+    {
+      "type": "expense",
+      "amount": 30.0,
+      "date": "2026-08-03",
+      "category": "Transport",
+      "over_budget": false,
+      "approaching_limit": false
+    },
+    {
+      "type": "expense",
+      "amount": 80.0,
+      "date": "2026-08-04",
+      "category": "Bill",
+      "over_budget": false,
+      "approaching_limit": false
+    }
+  ]
+}

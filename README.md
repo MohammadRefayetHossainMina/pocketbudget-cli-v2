@@ -21,6 +21,8 @@ The old “PocketBudget” idea was messy — rules mixed with file saving, and 
 
 There’s no database and no web API. Everything stays in memory while you work, then gets written to `data/budget.json`.
 
+The repo already includes a small **sample save file** in `data/budget.json` (made-up Salary / Food / Transport / Bill data) so you can clone and run commands straight away. When you add new transactions, that file updates on your machine.
+
 Want the full walkthrough? Start at [How a command moves through the app](#how-a-command-moves-through-the-app).
 
 ### The rules I locked in first
@@ -46,7 +48,7 @@ pocketbudget-cli-v2/
 │   ├── cli.py           # commands
 │   └── exceptions.py    # custom errors
 ├── tests/               # pytest suite
-├── data/                # local save file (created when you use the app)
+├── data/budget.json     # sample save file so the app runs immediately
 ├── rules.md             # product rules written before the code
 ├── requirements.txt
 ├── .pre-commit-config.yaml
