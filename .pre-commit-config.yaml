@@ -1,0 +1,40 @@
+# .pre-commit-config.yaml
+repos:
+  # 1. Standard Built-in Sanity Checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: detect-private-key
+
+  # 2. Ruff: Rapid Linting, Formatting & Cyclomatic Complexity Check
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      # Run Ruff Linter (default rules) + cyclomatic complexity limit of 7
+      - id: ruff
+        args: [--fix, --extend-select=C90, --config=mccabe.max-complexity=7]
+      # Run Ruff Formatter
+      - id: ruff-format
+
+  # 3. MyPy: Static Type Checking (strict, per Feature Build 0)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        args: [--strict, --ignore-missing-imports]
+
+  # 4. Local Pytest Execution
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false
