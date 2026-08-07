@@ -51,6 +51,9 @@ pocketbudget-cli-v2/
 ├── data/budget.json     # sample save file so the app runs immediately
 ├── rules.md             # product rules written before the code
 ├── requirements.txt
+├── pytest.ini
+├── ruff.toml
+├── LICENSE
 ├── .pre-commit-config.yaml
 └── README.md
 ```
