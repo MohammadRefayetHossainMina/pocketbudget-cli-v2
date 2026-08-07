@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pocketbudget.account import Account
+from pocketbudget.exceptions import InsufficientFundsError, InvalidAmountError
 
 
 def test_balance_is_readable_but_not_directly_assignable() -> None:
@@ -36,7 +37,7 @@ def test_add_expense_decreases_balance() -> None:
 def test_negative_income_raises_value_error() -> None:
     account = Account()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidAmountError):
         account.add_income(-10)
 
     assert account.balance == 0
@@ -46,7 +47,7 @@ def test_negative_expense_raises_value_error() -> None:
     account = Account()
     account.add_income(50)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidAmountError):
         account.add_expense(-5)
 
     assert account.balance == 50
@@ -57,7 +58,7 @@ def test_overdrawing_is_blocked_and_leaves_balance_unchanged() -> None:
     account = Account()
     account.add_income(50)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InsufficientFundsError):
         account.add_expense(51)
 
     assert account.balance == 50

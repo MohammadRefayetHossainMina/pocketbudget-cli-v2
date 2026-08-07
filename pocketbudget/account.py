@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from pocketbudget.exceptions import (
+    ConfirmationRequiredError,
+    InsufficientFundsError,
+    InvalidAmountError,
+    InvalidBudgetError,
+    InvalidCategoryError,
+)
+
 ALLOWED_CATEGORIES = frozenset({"Food", "Transport", "Salary", "Bill"})
 APPROACHING_LIMIT_RATIO = 0.20
 LARGE_EXPENSE_THRESHOLD = 100.0
@@ -37,7 +45,7 @@ class Account:
         """Set a spending limit for an allowed category."""
         normalized = self._normalize_category(category)
         if limit <= 0:
-            raise ValueError("Budget limit must be positive")
+            raise InvalidBudgetError("Budget limit must be positive")
         self._budgets[normalized] = float(limit)
 
     def add_income(self, amount: float, category: str | None = None) -> None:
@@ -69,9 +77,11 @@ class Account:
         """
         self._validate_positive_amount(amount)
         if amount > LARGE_EXPENSE_THRESHOLD and not confirmed:
-            raise ValueError("Expenses over $100 require confirmation")
+            raise ConfirmationRequiredError(
+                "Expenses over $100 require confirmation (use --confirm)"
+            )
         if amount > self._balance:
-            raise ValueError("Expense exceeds available balance")
+            raise InsufficientFundsError("Expense exceeds available balance")
 
         normalized: str | None = None
         if category is not None:
@@ -99,6 +109,14 @@ class Account:
         """Return a shallow copy of the transaction history."""
         return list(self._transactions)
 
+    def get_budgets(self) -> dict[str, float]:
+        """Return a shallow copy of category budget limits."""
+        return dict(self._budgets)
+
+    def get_spending_by_category(self) -> dict[str, float]:
+        """Return a shallow copy of spent amounts by category."""
+        return dict(self._spent)
+
     def _budget_flags(self, amount: float, category: str | None) -> TransactionResult:
         if category is None or category not in self._budgets:
             return TransactionResult()
@@ -117,13 +135,13 @@ class Account:
     def _normalize_category(category: str) -> str:
         cleaned = category.strip()
         if not cleaned:
-            raise ValueError("Category must not be empty")
+            raise InvalidCategoryError("Category must not be empty")
         normalized = cleaned.title()
         if normalized not in ALLOWED_CATEGORIES:
-            raise ValueError(f"Unknown category: {category!r}")
+            raise InvalidCategoryError(f"Unknown category: {category!r}")
         return normalized
 
     @staticmethod
     def _validate_positive_amount(amount: float) -> None:
         if amount <= 0:
-            raise ValueError("Transaction amount must be positive")
+            raise InvalidAmountError("Transaction amount must be positive")

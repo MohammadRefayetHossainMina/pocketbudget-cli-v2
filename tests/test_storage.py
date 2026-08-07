@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from pocketbudget.account import Account
+from pocketbudget.exceptions import CorruptStorageError, InvalidAmountError
 from pocketbudget.storage import load_account, save_account
 
 
@@ -40,7 +41,7 @@ def test_load_corrupt_json_raises_error(tmp_path: Path) -> None:
     path = tmp_path / "corrupt.json"
     path.write_text("{not valid json", encoding="utf-8")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(CorruptStorageError):
         load_account(path)
 
 
@@ -54,5 +55,5 @@ def test_load_rejects_invalid_saved_amounts_without_corrupting_state(
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidAmountError):
         load_account(path)

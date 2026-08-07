@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pocketbudget.account import Account
+from pocketbudget.exceptions import InsufficientFundsError
 
 
 def test_expense_under_budget_has_no_warning_flags() -> None:
@@ -52,7 +53,7 @@ def test_over_budget_does_not_bypass_negative_balance_protection() -> None:
     account.add_income(50)
     account.set_budget("Food", 200)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InsufficientFundsError):
         account.add_expense(60, category="Food")
 
     assert account.balance == 50
