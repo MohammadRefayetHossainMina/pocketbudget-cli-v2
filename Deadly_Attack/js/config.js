@@ -1,12 +1,13 @@
+(function (DA) {
 /** Stage tables, enemy types, biome palettes, and scaling. Art later; color/size only. */
 
-export const CANVAS_WIDTH = 960;
-export const CANVAS_HEIGHT = 540;
-export const GROUND_HEIGHT = 72;
-export const GROUND_Y = CANVAS_HEIGHT - GROUND_HEIGHT;
-export const STAGE_COUNT = 50;
+  const CANVAS_WIDTH = 960;
+  const CANVAS_HEIGHT = 540;
+  const GROUND_HEIGHT = 72;
+  const GROUND_Y = CANVAS_HEIGHT - GROUND_HEIGHT;
+  const STAGE_COUNT = 50;
 
-export const COLORS = {
+  const COLORS = {
   player: "#3d8bfd",
   thug: "#e67e22",
   biker: "#f1c40f",
@@ -17,7 +18,7 @@ export const COLORS = {
   kingpin: "#ffd54a",
 };
 
-export const PLAYER = {
+  const PLAYER = {
   radius: 16,
   height: 46,
   color: COLORS.player,
@@ -32,19 +33,19 @@ export const PLAYER = {
   name: "Ayan",
 };
 
-export const LIMITS = {
+  const LIMITS = {
   maxEnemies: 14,
   maxBullets: 48,
   maxDt: 1 / 30,
 };
 
-export const BOSS_SIZE_MULT = 1.8;
-export const BOSS_HP_MULT = 4.2;
-export const HP_SCALE = 0.12;
-export const SPEED_SCALE = 0.028;
-export const DAMAGE_SCALE = 0.04;
+  const BOSS_SIZE_MULT = 1.8;
+  const BOSS_HP_MULT = 4.2;
+  const HP_SCALE = 0.12;
+  const SPEED_SCALE = 0.028;
+  const DAMAGE_SCALE = 0.04;
 
-export const ENEMY_TYPES = {
+  const ENEMY_TYPES = {
   thug: {
     id: "thug",
     name: "Street Thug",
@@ -145,7 +146,7 @@ export const ENEMY_TYPES = {
   },
 };
 
-export const TYPE_LEGEND = [
+  const TYPE_LEGEND = [
   { id: "player", label: "Ayan", color: COLORS.player },
   { id: "thug", label: "Thug", color: COLORS.thug },
   { id: "biker", label: "Biker", color: COLORS.biker },
@@ -156,7 +157,7 @@ export const TYPE_LEGEND = [
   { id: "kingpin", label: "Kingpin", color: COLORS.kingpin },
 ];
 
-export const BIOMES = {
+  const BIOMES = {
   slums: {
     id: "slums",
     name: "The Slums & Backalleys",
@@ -214,7 +215,7 @@ export const BIOMES = {
   },
 };
 
-export function biomeIdFor(stage) {
+  function biomeIdFor(stage) {
   if (stage <= 10) return "slums";
   if (stage <= 20) return "subway";
   if (stage <= 30) return "labs";
@@ -222,15 +223,15 @@ export function biomeIdFor(stage) {
   return "penthouse";
 }
 
-export function biomeFor(stage) {
+  function biomeFor(stage) {
   return BIOMES[biomeIdFor(stage)];
 }
 
-export function scaleStat(base, stage, perStage) {
+  function scaleStat(base, stage, perStage) {
   return base * (1 + perStage * (stage - 1));
 }
 
-export function scaledEnemyStats(typeId, stage, isBoss) {
+  function scaledEnemyStats(typeId, stage, isBoss) {
   const t = ENEMY_TYPES[typeId];
   let hp = scaleStat(t.hp, stage, HP_SCALE);
   let speed = Math.min(scaleStat(t.speed, stage, SPEED_SCALE), t.speed * 2.1);
@@ -263,7 +264,7 @@ export function scaledEnemyStats(typeId, stage, isBoss) {
   };
 }
 
-export function typesForStage(stage) {
+  function typesForStage(stage) {
   if (stage <= 4) return ["thug"];
   if (stage <= 10) return ["thug"];
   if (stage <= 15) return ["thug", "biker"];
@@ -277,7 +278,7 @@ export function typesForStage(stage) {
   return ["elite"];
 }
 
-export function miniBossType(stage) {
+  function miniBossType(stage) {
   if (stage === 50) return "kingpin";
   if (stage <= 10) return "thug";
   if (stage <= 15) return "biker";
@@ -287,12 +288,12 @@ export function miniBossType(stage) {
   return "mecha";
 }
 
-export function regularCount(stage) {
+  function regularCount(stage) {
   if (stage === 50) return 4;
   return Math.min(6 + Math.floor((stage - 1) / 2), 14);
 }
 
-export function spawnInterval(stage) {
+  function spawnInterval(stage) {
   return Math.max(0.42, 1.35 - stage * 0.016);
 }
 
@@ -312,4 +313,7 @@ function buildStages() {
   return stages;
 }
 
-export const STAGES = buildStages();
+  const STAGES = buildStages();
+
+  DA.CANVAS_WIDTH = CANVAS_WIDTH; DA.CANVAS_HEIGHT = CANVAS_HEIGHT; DA.GROUND_HEIGHT = GROUND_HEIGHT; DA.GROUND_Y = GROUND_Y; DA.STAGE_COUNT = STAGE_COUNT; DA.COLORS = COLORS; DA.PLAYER = PLAYER; DA.LIMITS = LIMITS; DA.BOSS_SIZE_MULT = BOSS_SIZE_MULT; DA.BOSS_HP_MULT = BOSS_HP_MULT; DA.HP_SCALE = HP_SCALE; DA.SPEED_SCALE = SPEED_SCALE; DA.DAMAGE_SCALE = DAMAGE_SCALE; DA.ENEMY_TYPES = ENEMY_TYPES; DA.TYPE_LEGEND = TYPE_LEGEND; DA.BIOMES = BIOMES; DA.biomeIdFor = biomeIdFor; DA.biomeFor = biomeFor; DA.scaleStat = scaleStat; DA.scaledEnemyStats = scaledEnemyStats; DA.typesForStage = typesForStage; DA.miniBossType = miniBossType; DA.regularCount = regularCount; DA.spawnInterval = spawnInterval; DA.STAGES = STAGES;
+})(window.DA = window.DA || {});

@@ -6,14 +6,9 @@ Year 2086, Neon Crime City. You are **Ayan**. Fifty underground floors. **The Ki
 
 ## How to run
 
-Canvas ES modules need a local server (opening `index.html` as a file is often blocked):
+**Double-click `index.html`** (or `Play.bat` on Windows). No server. `localhost:8080` will refuse to connect unless you start one yourself.
 
-```bash
-cd Deadly_Attack
-python3 -m http.server 8080
-```
-
-Then open http://localhost:8080
+If a browser blocks local files, right-click `index.html` → Open with → Edge or Chrome.
 
 ## Controls
 
@@ -55,6 +50,7 @@ Difficulty scales every floor (`hp *= 1 + 0.12 * (stage-1)`). Live enemies cap a
 ```
 Deadly_Attack/
   index.html
+  Play.bat
   css/style.css
   js/
     main.js          game loop
