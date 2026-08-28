@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deadly Attack — The Neon Shadow</title>
+    <style>
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: #07070f;
+  color: #e8e8f0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+#wrap {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+}
+
+h1 {
+  font-size: 1.15rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #7ec8ff;
+  font-weight: 700;
+}
+
+#game {
+  display: block;
+  width: min(960px, calc(100vw - 24px));
+  height: auto;
+  background: #000;
+  border: 2px solid #2a2a4a;
+  border-radius: 8px;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #8b8ba0;
+  text-align: center;
+  max-width: 960px;
+}
+
+    </style>
+  </head>
+  <body>
+    <main id="wrap">
+      <h1>Deadly Attack</h1>
+      <canvas id="game" width="960" height="540" aria-label="Deadly Attack game"></canvas>
+      <p class="hint">
+        WASD / Arrows move · W or Up jump · Space shoot · Enter continue · R restart
+      </p>
+    </main>
+    <script>
+/* ===== util.js ===== */
+(function (DA) {
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function shadeHex(hex, amount) {
+    const raw = hex.replace("#", "");
+    const full =
+      raw.length === 3
+        ? raw
+            .split("")
+            .map((ch) => ch + ch)
+            .join("")
+        : raw;
+    const n = parseInt(full, 16);
+    const r = clamp((n >> 16) + amount, 0, 255);
+    const g = clamp(((n >> 8) & 255) + amount, 0, 255);
+    const b = clamp((n & 255) + amount, 0, 255);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function mixTowardWhite(hex, t) {
+    const raw = hex.replace("#", "");
+    const full =
+      raw.length === 3
+        ? raw
+            .split("")
+            .map((ch) => ch + ch)
+            .join("")
+        : raw;
+    const n = parseInt(full, 16);
+    const r = (n >> 16) + (255 - (n >> 16)) * t;
+    const g = ((n >> 8) & 255) + (255 - ((n >> 8) & 255)) * t;
+    const b = (n & 255) + (255 - (n & 255)) * t;
+    return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+  }
+
+  function cylindersOverlap(a, b) {
+    return (
+      a.x - a.radius < b.x + b.radius &&
+      a.x + a.radius > b.x - b.radius &&
+      a.y - a.height < b.y &&
+      a.y > b.y - b.height
+    );
+  }
+
+  function circleHitsCylinder(cx, cy, cr, body) {
+    const nx = clamp(cx, body.x - body.radius, body.x + body.radius);
+    const ny = clamp(cy, body.y - body.height, body.y);
+    const dx = cx - nx;
+    const dy = cy - ny;
+    return dx * dx + dy * dy <= cr * cr;
+  }
+
+  DA.clamp = clamp, DA.shadeHex = shadeHex, DA.mixTowardWhite = mixTowardWhite, DA.cylindersOverlap = cylindersOverlap, DA.circleHitsCylinder = circleHitsCylinder;
+})(window.DA = window.DA || {});
+
+/* ===== config.js ===== */
+(function (DA) {
+/** Stage tables, enemy types, biome palettes, and scaling. Art later; color/size only. */
+
+  const CANVAS_WIDTH = 960;
+  const CANVAS_HEIGHT = 540;
+  const GROUND_HEIGHT = 72;
+  const GROUND_Y = CANVAS_HEIGHT - GROUND_HEIGHT;
+  const STAGE_COUNT = 50;
+
+  const COLORS = {
+  player: "#3d8bfd",
+  thug: "#e67e22",
+  biker: "#f1c40f",
+  drone: "#1abc9c",
+  cyborg: "#e84393",
+  elite: "#e74c3c",
+  mecha: "#5d6d7e",
+  kingpin: "#ffd54a",
+};
+
+  const PLAYER = {
+  radius: 16,
+  height: 46,
+  color: COLORS.player,
+  speed: 230,
+  jumpForce: 430,
+  gravity: 1150,
+  maxHp: 100,
+  fireCooldown: 0.22,
+  invulnTime: 0.85,
+  bulletSpeed: 520,
+  bulletDamage: 14,
+  name: "Ayan",
+};
+
+  const LIMITS = {
+  maxEnemies: 14,
+  maxBullets: 48,
+  maxDt: 1 / 30,
+};
+
+  const BOSS_SIZE_MULT = 1.8;
+  const BOSS_HP_MULT = 4.2;
+  const HP_SCALE = 0.12;
+  const SPEED_SCALE = 0.028;
+  const DAMAGE_SCALE = 0.04;
+
+  const ENEMY_TYPES = {
+  thug: {
+    id: "thug",
+    name: "Street Thug",
+    color: COLORS.thug,
+    radius: 16,
+    height: 44,
+    speed: 72,
+    hp: 28,
+    damage: 8,
+    score: 10,
+    flying: false,
+    ranged: false,
+    fireCooldown: 0,
+  },
+  biker: {
+    id: "biker",
+    name: "Slide-Runner",
+    color: COLORS.biker,
+    radius: 15,
+    height: 40,
+    speed: 150,
+    hp: 24,
+    damage: 10,
+    score: 15,
+    flying: false,
+    ranged: false,
+    fireCooldown: 0,
+  },
+  drone: {
+    id: "drone",
+    name: "Hunter Drone",
+    color: COLORS.drone,
+    radius: 14,
+    height: 28,
+    speed: 118,
+    hp: 20,
+    damage: 8,
+    score: 20,
+    flying: true,
+    ranged: false,
+    fireCooldown: 0,
+  },
+  cyborg: {
+    id: "cyborg",
+    name: "Lab Cyborg",
+    color: COLORS.cyborg,
+    radius: 18,
+    height: 50,
+    speed: 88,
+    hp: 55,
+    damage: 14,
+    score: 25,
+    flying: false,
+    ranged: true,
+    fireCooldown: 1.65,
+  },
+  elite: {
+    id: "elite",
+    name: "Elite Guard",
+    color: COLORS.elite,
+    radius: 17,
+    height: 48,
+    speed: 102,
+    hp: 70,
+    damage: 16,
+    score: 35,
+    flying: false,
+    ranged: true,
+    fireCooldown: 1.35,
+  },
+  mecha: {
+    id: "mecha",
+    name: "Mecha-Suit",
+    color: COLORS.mecha,
+    radius: 22,
+    height: 68,
+    speed: 58,
+    hp: 120,
+    damage: 22,
+    score: 50,
+    flying: false,
+    ranged: true,
+    fireCooldown: 1.85,
+  },
+  kingpin: {
+    id: "kingpin",
+    name: "The Kingpin",
+    color: COLORS.kingpin,
+    radius: 30,
+    height: 86,
+    speed: 52,
+    hp: 420,
+    damage: 28,
+    score: 500,
+    flying: false,
+    ranged: true,
+    fireCooldown: 1.05,
+  },
+};
+
+  const TYPE_LEGEND = [
+  { id: "player", label: "Ayan", color: COLORS.player },
+  { id: "thug", label: "Thug", color: COLORS.thug },
+  { id: "biker", label: "Biker", color: COLORS.biker },
+  { id: "drone", label: "Drone", color: COLORS.drone },
+  { id: "cyborg", label: "Cyborg", color: COLORS.cyborg },
+  { id: "elite", label: "Elite", color: COLORS.elite },
+  { id: "mecha", label: "Mecha", color: COLORS.mecha },
+  { id: "kingpin", label: "Kingpin", color: COLORS.kingpin },
+];
+
+  const BIOMES = {
+  slums: {
+    id: "slums",
+    name: "The Slums & Backalleys",
+    sky: ["#140c1c", "#3a1d3a", "#1a1020"],
+    building: "#241428",
+    building2: "#1a0e1c",
+    window: "#ffb347",
+    street: "#161218",
+    accent: "#ff6b35",
+    fog: "rgba(80, 30, 50, 0.18)",
+  },
+  subway: {
+    id: "subway",
+    name: "The Abandoned Subway",
+    sky: ["#0a1218", "#102028", "#0c141c"],
+    building: "#152028",
+    building2: "#0e181e",
+    window: "#3ec6ff",
+    street: "#101418",
+    accent: "#1abc9c",
+    fog: "rgba(20, 50, 60, 0.22)",
+  },
+  labs: {
+    id: "labs",
+    name: "Cyber-Laboratories",
+    sky: ["#06140e", "#0c2418", "#081810"],
+    building: "#0e2218",
+    building2: "#0a1a12",
+    window: "#39ff9a",
+    street: "#0c1410",
+    accent: "#e84393",
+    fog: "rgba(20, 80, 50, 0.16)",
+  },
+  skyscraper: {
+    id: "skyscraper",
+    name: "The Neon Skyscraper",
+    sky: ["#0a1028", "#1a2050", "#101838"],
+    building: "#141a38",
+    building2: "#0e1230",
+    window: "#7ec8ff",
+    street: "#101428",
+    accent: "#e74c3c",
+    fog: "rgba(30, 40, 90, 0.2)",
+  },
+  penthouse: {
+    id: "penthouse",
+    name: "The Penthouse & Bunker",
+    sky: ["#120e0a", "#2a1c0c", "#18100a"],
+    building: "#22180e",
+    building2: "#18120c",
+    window: "#ffd54a",
+    street: "#140e0a",
+    accent: "#ffd54a",
+    fog: "rgba(60, 40, 10, 0.2)",
+  },
+};
+
+  function biomeIdFor(stage) {
+  if (stage <= 10) return "slums";
+  if (stage <= 20) return "subway";
+  if (stage <= 30) return "labs";
+  if (stage <= 40) return "skyscraper";
+  return "penthouse";
+}
+
+  function biomeFor(stage) {
+  return BIOMES[biomeIdFor(stage)];
+}
+
+  function scaleStat(base, stage, perStage) {
+  return base * (1 + perStage * (stage - 1));
+}
+
+  function scaledEnemyStats(typeId, stage, isBoss) {
+  const t = ENEMY_TYPES[typeId];
+  let hp = scaleStat(t.hp, stage, HP_SCALE);
+  let speed = Math.min(scaleStat(t.speed, stage, SPEED_SCALE), t.speed * 2.1);
+  let radius = t.radius;
+  let height = t.height;
+  let damage = scaleStat(t.damage, stage, DAMAGE_SCALE);
+
+  if (isBoss) {
+    if (typeId === "kingpin") {
+      radius *= 1.25;
+      height *= 1.15;
+      hp *= 1.2;
+      damage *= 1.4;
+    } else {
+      radius *= BOSS_SIZE_MULT;
+      height *= BOSS_SIZE_MULT;
+      hp *= BOSS_HP_MULT;
+      damage *= 1.6;
+    }
+  }
+
+  return {
+    ...t,
+    hp: Math.round(hp),
+    speed,
+    radius,
+    height,
+    damage: Math.round(damage),
+    score: t.score * (isBoss ? 5 : 1) + stage,
+  };
+}
+
+  function typesForStage(stage) {
+  if (stage <= 4) return ["thug"];
+  if (stage <= 10) return ["thug"];
+  if (stage <= 15) return ["thug", "biker"];
+  if (stage <= 20) return ["biker", "drone"];
+  if (stage <= 25) return ["cyborg"];
+  if (stage <= 30) return ["cyborg", "drone"];
+  if (stage <= 35) return ["elite"];
+  if (stage <= 40) return ["elite", "cyborg"];
+  if (stage <= 45) return ["elite", "mecha"];
+  if (stage <= 49) return ["mecha"];
+  return ["elite"];
+}
+
+  function miniBossType(stage) {
+  if (stage === 50) return "kingpin";
+  if (stage <= 10) return "thug";
+  if (stage <= 15) return "biker";
+  if (stage <= 20) return "drone";
+  if (stage <= 30) return "cyborg";
+  if (stage <= 40) return "elite";
+  return "mecha";
+}
+
+  function regularCount(stage) {
+  if (stage === 50) return 4;
+  return Math.min(6 + Math.floor((stage - 1) / 2), 14);
+}
+
+  function spawnInterval(stage) {
+  return Math.max(0.42, 1.35 - stage * 0.016);
+}
+
+function buildStages() {
+  const stages = [];
+  for (let i = 1; i <= STAGE_COUNT; i += 1) {
+    stages.push({
+      id: i,
+      biome: biomeIdFor(i),
+      biomeName: biomeFor(i).name,
+      types: typesForStage(i),
+      regularCount: regularCount(i),
+      spawnInterval: spawnInterval(i),
+      miniBossType: miniBossType(i),
+    });
+  }
+  return stages;
+}
+
+  const STAGES = buildStages();
+
+  DA.CANVAS_WIDTH = CANVAS_WIDTH; DA.CANVAS_HEIGHT = CANVAS_HEIGHT; DA.GROUND_HEIGHT = GROUND_HEIGHT; DA.GROUND_Y = GROUND_Y; DA.STAGE_COUNT = STAGE_COUNT; DA.COLORS = COLORS; DA.PLAYER = PLAYER; DA.LIMITS = LIMITS; DA.BOSS_SIZE_MULT = BOSS_SIZE_MULT; DA.BOSS_HP_MULT = BOSS_HP_MULT; DA.HP_SCALE = HP_SCALE; DA.SPEED_SCALE = SPEED_SCALE; DA.DAMAGE_SCALE = DAMAGE_SCALE; DA.ENEMY_TYPES = ENEMY_TYPES; DA.TYPE_LEGEND = TYPE_LEGEND; DA.BIOMES = BIOMES; DA.biomeIdFor = biomeIdFor; DA.biomeFor = biomeFor; DA.scaleStat = scaleStat; DA.scaledEnemyStats = scaledEnemyStats; DA.typesForStage = typesForStage; DA.miniBossType = miniBossType; DA.regularCount = regularCount; DA.spawnInterval = spawnInterval; DA.STAGES = STAGES;
+})(window.DA = window.DA || {});
+
+/* ===== animation.js ===== */
+(function (DA) {
+  /**
+   * Procedural cylinder motion. Sprite sheets can replace draw.js later;
+   * this module only ticks pose fields (bob, squash, pulse, flash).
+   */
+
+  function tickFlashAndMuzzle(entity, dt) {
+    entity.flash = Math.max(0, (entity.flash || 0) - dt);
+    entity.muzzle = Math.max(0, (entity.muzzle || 0) - dt);
+  }
+
+  function tickBossPulse(entity, dt) {
+    entity.age = (entity.age || 0) + dt;
+    entity.pulse = entity.isBoss ? 1 + Math.sin(entity.age * 3.1) * 0.045 : 1;
+  }
+
+  function tickWalkBob(entity, dt, speedFactor, amplitude) {
+    entity.walkPhase = (entity.walkPhase || 0) + dt * speedFactor;
+    entity.bob = Math.sin(entity.walkPhase) * amplitude;
+  }
+
+  function tickHoverBob(entity, dt) {
+    entity.walkPhase = (entity.walkPhase || 0) + dt * 8;
+    entity.bob = Math.sin((entity.age || 0) * 5) * 2;
+  }
+
+  function tickLandSquash(entity, dt, duration = 0.22) {
+    if (entity.landSquash > 0) {
+      entity.landSquash -= dt;
+      const t = Math.max(0, Math.min(1, entity.landSquash / duration));
+      entity.squash = 0.8 + 0.2 * (1 - t);
+    } else {
+      entity.squash = 1;
+    }
+  }
+
+  DA.tickFlashAndMuzzle = tickFlashAndMuzzle; DA.tickBossPulse = tickBossPulse; DA.tickWalkBob = tickWalkBob; DA.tickHoverBob = tickHoverBob; DA.tickLandSquash = tickLandSquash;
+})(window.DA = window.DA || {});
+
+/* ===== draw.js ===== */
+(function (DA) {
+  const { mixTowardWhite, shadeHex } = DA;
+
+  /**
+   * 2D cylinder (capsule body + ellipse cap). Color = type, size = rank.
+   * Optional motion: bob, squash/stretch, walk legs, hit flash, boss pulse.
+   */
+  function drawCylinder(ctx, spec) {
+    const {
+      x,
+      y,
+      radius,
+      height,
+      color,
+      squash = 1,
+      stretch = 1,
+      bob = 0,
+      flash = 0,
+      facing = 1,
+      walkPhase = 0,
+      isBoss = false,
+      pulse = 1,
+      muzzle = 0,
+      typeId = "",
+      hpRatio = 1,
+      moving = false,
+    } = spec;
+
+    const r = Math.max(6, (radius * pulse) / Math.max(0.72, squash));
+    const h = Math.max(r * 1.35, height * stretch * squash);
+    const baseY = y + bob;
+    const topY = baseY - h;
+    const fill = flash > 0 ? mixTowardWhite(color, Math.min(0.75, flash * 4)) : color;
+    const dark = shadeHex(fill, -40);
+    const cap = shadeHex(fill, 36);
+    const stride = moving ? Math.sin(walkPhase) * Math.min(9, r * 0.42) : 0;
+
+    ctx.save();
+
+    if (!spec.flying) {
+      drawLeg(ctx, x - r * 0.35 - stride * 0.2, baseY, r * 0.28, dark, facing);
+      drawLeg(ctx, x + r * 0.35 + stride * 0.2, baseY, r * 0.28, dark, facing);
+    }
+
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.ellipse(x, baseY - 2, r, r * 0.38, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = fill;
+    ctx.fillRect(x - r, topY, r * 2, h - 2);
+
+    ctx.fillStyle = cap;
+    ctx.beginPath();
+    ctx.ellipse(x, topY, r, r * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.28, topY + h * 0.28, r * 0.18, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const visorX = x + facing * r * 0.28;
+    const visorY = topY + Math.min(16, h * 0.22);
+    ctx.fillStyle = "rgba(10, 14, 22, 0.72)";
+    ctx.beginPath();
+    ctx.ellipse(visorX, visorY, r * 0.42, Math.max(4, r * 0.22), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(180, 230, 255, 0.35)";
+    ctx.beginPath();
+    ctx.ellipse(visorX + facing * 2, visorY - 1, r * 0.16, r * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (isBoss) {
+      ctx.strokeStyle = shadeHex(fill, 50);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(x, topY + h * 0.38, r * 0.92, r * 0.22, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (typeId === "kingpin") {
+      ctx.fillStyle = "#fff3b0";
+      ctx.beginPath();
+      ctx.moveTo(x - r * 0.55, topY - 2);
+      ctx.lineTo(x, topY - r * 0.7);
+      ctx.lineTo(x + r * 0.55, topY - 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (muzzle > 0) {
+      ctx.fillStyle = "#ffe566";
+      ctx.beginPath();
+      ctx.ellipse(
+        x + facing * (r + 10),
+        topY + h * 0.42,
+        10 + muzzle * 40,
+        4,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+
+    if (isBoss && hpRatio < 1) {
+      const bw = r * 2;
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(x - r, topY - 12, bw, 5);
+      ctx.fillStyle = hpRatio > 0.4 ? "#3ecf6d" : "#e74c3c";
+      ctx.fillRect(x - r, topY - 12, bw * Math.max(0, hpRatio), 5);
+    }
+
+    ctx.restore();
+  }
+
+  function drawLeg(ctx, lx, ly, lr, color, facing) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(lx + facing * 2, ly + 4, lr, lr * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawBullet(ctx, b) {
+    ctx.fillStyle = b.team === "player" ? "#cfe8ff" : "#ff8a7a";
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, b.team === "player" ? 7 : 6, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawActor(ctx, entity) {
+    const moving = entity.flying ? true : Math.abs(entity.vx || 0) > 8 || (!entity.onGround && !entity.flying);
+    drawCylinder(ctx, {
+      x: entity.x,
+      y: entity.y,
+      radius: entity.radius,
+      height: entity.height,
+      color: entity.color,
+      squash: entity.squash ?? 1,
+      stretch: entity.stretch ?? 1,
+      bob: entity.bob ?? 0,
+      flash: entity.flash ?? 0,
+      facing: entity.facing ?? 1,
+      walkPhase: entity.walkPhase ?? 0,
+      isBoss: !!entity.isBoss,
+      pulse: entity.pulse ?? 1,
+      muzzle: entity.muzzle ?? 0,
+      typeId: entity.typeId || "",
+      hpRatio: entity.maxHp ? entity.hp / entity.maxHp : 1,
+      flying: !!entity.flying,
+      moving: entity.onGround ? Math.abs(entity.vx || entity._chaseSpeed || 0) > 12 : moving,
+    });
+  }
+
+  DA.drawCylinder = drawCylinder; DA.drawBullet = drawBullet; DA.drawActor = drawActor;
+})(window.DA = window.DA || {});
+
+/* ===== input.js ===== */
+(function (DA) {
+  const TRACKED = new Set([
+    "KeyA",
+    "KeyD",
+    "KeyW",
+    "KeyS",
+    "KeyK",
+    "Space",
+    "Enter",
+    "KeyR",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowUp",
+    "ArrowDown",
+  ]);
+
+  function createInput() {
+    const held = new Set();
+    const pressed = new Set();
+
+    window.addEventListener("keydown", (event) => {
+      if (TRACKED.has(event.code)) {
+        event.preventDefault();
+      }
+      if (!held.has(event.code)) {
+        pressed.add(event.code);
+      }
+      held.add(event.code);
+    });
+
+    window.addEventListener("keyup", (event) => {
+      held.delete(event.code);
+    });
+
+    window.addEventListener("blur", () => {
+      held.clear();
+      pressed.clear();
+    });
+
+    return {
+      down(code) {
+        return held.has(code);
+      },
+      pressed(code) {
+        return pressed.has(code);
+      },
+      endFrame() {
+        pressed.clear();
+      },
+    };
+  }
+
+  DA.createInput = createInput;
+})(window.DA = window.DA || {});
+
+/* ===== bullets.js ===== */
+(function (DA) {
+  const { CANVAS_WIDTH, LIMITS, drawBullet } = DA;
+
+  function makeBullet() {
+    return {
+      active: false,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      team: "player",
+      damage: 0,
+      radius: 4,
+    };
+  }
+
+  function createBulletPool() {
+    const pool = Array.from({ length: LIMITS.maxBullets }, makeBullet);
+
+    return {
+      spawn(spec) {
+        const bullet = pool.find((item) => !item.active);
+        if (!bullet) {
+          return null;
+        }
+        bullet.active = true;
+        bullet.x = spec.x;
+        bullet.y = spec.y;
+        bullet.vx = spec.vx;
+        bullet.vy = spec.vy || 0;
+        bullet.team = spec.team;
+        bullet.damage = spec.damage;
+        bullet.radius = spec.radius || 4;
+        return bullet;
+      },
+      update(dt) {
+        for (const bullet of pool) {
+          if (!bullet.active) {
+            continue;
+          }
+          bullet.x += bullet.vx * dt;
+          bullet.y += bullet.vy * dt;
+          if (bullet.x < -20 || bullet.x > CANVAS_WIDTH + 20 || bullet.y < -20 || bullet.y > 560) {
+            bullet.active = false;
+          }
+        }
+      },
+      draw(ctx) {
+        for (const bullet of pool) {
+          if (bullet.active) {
+            drawBullet(ctx, bullet);
+          }
+        }
+      },
+      eachActive(fn) {
+        for (const bullet of pool) {
+          if (bullet.active) {
+            fn(bullet);
+          }
+        }
+      },
+      clear() {
+        for (const bullet of pool) {
+          bullet.active = false;
+        }
+      },
+    };
+  }
+
+  DA.createBulletPool = createBulletPool;
+})(window.DA = window.DA || {});
+
+/* ===== player.js ===== */
+(function (DA) {
+  const { tickFlashAndMuzzle, tickLandSquash, CANVAS_WIDTH, GROUND_Y, PLAYER, drawActor, clamp } = DA;
+
+  function createPlayer() {
+    return {
+      x: 140,
+      y: GROUND_Y,
+      vx: 0,
+      vy: 0,
+      radius: PLAYER.radius,
+      height: PLAYER.height,
+      color: PLAYER.color,
+      hp: PLAYER.maxHp,
+      maxHp: PLAYER.maxHp,
+      onGround: true,
+      facing: 1,
+      walkPhase: 0,
+      shootCooldown: 0,
+      invuln: 0,
+      landSquash: 0,
+      muzzle: 0,
+      flash: 0,
+      squash: 1,
+      stretch: 1,
+      bob: 0,
+      pulse: 1,
+      typeId: "player",
+      isBoss: false,
+      flying: false,
+    };
+  }
+
+  function resetPlayer(player) {
+    player.x = 140;
+    player.y = GROUND_Y;
+    player.vx = 0;
+    player.vy = 0;
+    player.hp = PLAYER.maxHp;
+    player.onGround = true;
+    player.facing = 1;
+    player.walkPhase = 0;
+    player.shootCooldown = 0;
+    player.invuln = 0;
+    player.landSquash = 0;
+    player.muzzle = 0;
+    player.flash = 0;
+    player.squash = 1;
+    player.stretch = 1;
+    player.bob = 0;
+  }
+
+  function hurtPlayer(player, amount) {
+    if (player.invuln > 0 || player.hp <= 0) {
+      return false;
+    }
+    player.hp = Math.max(0, player.hp - amount);
+    player.invuln = PLAYER.invulnTime;
+    player.flash = 0.18;
+    player.vx = -player.facing * 90;
+    return true;
+  }
+
+  function updatePlayer(player, dt, input, bullets) {
+    const left = input.down("KeyA") || input.down("ArrowLeft");
+    const right = input.down("KeyD") || input.down("ArrowRight");
+    const jump =
+      input.pressed("KeyW") || input.pressed("ArrowUp") || input.pressed("KeyK");
+    const shoot = input.down("Space");
+
+    player.vx = 0;
+    if (left) {
+      player.vx = -PLAYER.speed;
+      player.facing = -1;
+    }
+    if (right) {
+      player.vx = PLAYER.speed;
+      player.facing = 1;
+    }
+
+    if (jump && player.onGround) {
+      player.vy = -PLAYER.jumpForce;
+      player.onGround = false;
+      player.stretch = 1.12;
+    }
+
+    player.vy += PLAYER.gravity * dt;
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
+
+    if (player.y >= GROUND_Y) {
+      if (!player.onGround && player.vy > 90) {
+        player.landSquash = 0.22;
+      }
+      player.y = GROUND_Y;
+      player.vy = 0;
+      player.onGround = true;
+    } else {
+      player.onGround = false;
+    }
+
+    player.x = clamp(player.x, player.radius + 10, CANVAS_WIDTH * 0.58);
+
+    if (player.onGround && Math.abs(player.vx) > 1) {
+      player.walkPhase += dt * 11;
+      player.bob = Math.sin(player.walkPhase) * 3.2;
+      player.stretch = 1;
+    } else if (!player.onGround) {
+      player.walkPhase += dt * 3;
+      player.bob = 0;
+      player.stretch = 1.08;
+    } else {
+      player.walkPhase += dt * 2;
+      player.bob = Math.sin(player.walkPhase * 0.6) * 1.1;
+      player.stretch = 1;
+    }
+
+    tickLandSquash(player, dt);
+    player.shootCooldown = Math.max(0, player.shootCooldown - dt);
+    player.invuln = Math.max(0, player.invuln - dt);
+    tickFlashAndMuzzle(player, dt);
+
+    if (shoot && player.shootCooldown <= 0 && player.hp > 0) {
+      bullets.spawn({
+        x: player.x + player.facing * (player.radius + 10),
+        y: player.y - player.height * 0.55,
+        vx: PLAYER.bulletSpeed * player.facing,
+        vy: 0,
+        team: "player",
+        damage: PLAYER.bulletDamage,
+      });
+      player.shootCooldown = PLAYER.fireCooldown;
+      player.muzzle = 0.08;
+    }
+  }
+
+  function drawPlayer(ctx, player) {
+    if (player.invuln > 0 && Math.floor(player.invuln * 12) % 2 === 0) {
+      ctx.globalAlpha = 0.4;
+      drawActor(ctx, player);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    drawActor(ctx, player);
+  }
+
+  DA.createPlayer = createPlayer; DA.resetPlayer = resetPlayer; DA.hurtPlayer = hurtPlayer; DA.updatePlayer = updatePlayer; DA.drawPlayer = drawPlayer;
+})(window.DA = window.DA || {});
+
+/* ===== enemy.js ===== */
+(function (DA) {
+  const { tickBossPulse, tickFlashAndMuzzle, tickHoverBob, tickWalkBob, CANVAS_WIDTH, GROUND_Y, LIMITS, PLAYER, scaledEnemyStats, drawActor, hurtPlayer, circleHitsCylinder, cylindersOverlap } = DA;
+
+  function makeEnemy() {
+    return {
+      active: false,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      radius: 16,
+      height: 44,
+      color: "#e67e22",
+      hp: 1,
+      maxHp: 1,
+      speed: 70,
+      damage: 8,
+      score: 10,
+      flying: false,
+      ranged: false,
+      fireCooldown: 1,
+      fireTimer: 0,
+      facing: -1,
+      onGround: true,
+      walkPhase: 0,
+      flash: 0,
+      bob: 0,
+      pulse: 1,
+      squash: 1,
+      stretch: 1,
+      muzzle: 0,
+      isBoss: false,
+      typeId: "thug",
+      age: 0,
+      _chaseSpeed: 0,
+    };
+  }
+
+  function createEnemyManager() {
+    const pool = Array.from({ length: LIMITS.maxEnemies }, makeEnemy);
+
+    function live() {
+      return pool.filter((enemy) => enemy.active);
+    }
+
+    return {
+      canSpawn() {
+        return pool.some((enemy) => !enemy.active);
+      },
+      liveCount() {
+        return pool.reduce((n, enemy) => n + (enemy.active ? 1 : 0), 0);
+      },
+      hasBoss() {
+        return pool.some((enemy) => enemy.active && enemy.isBoss);
+      },
+      spawn(typeId, { stage, isBoss }) {
+        const slot = pool.find((enemy) => !enemy.active);
+        if (!slot) {
+          return null;
+        }
+        const stats = scaledEnemyStats(typeId, stage, isBoss);
+        slot.active = true;
+        slot.typeId = typeId;
+        slot.isBoss = isBoss;
+        slot.radius = stats.radius;
+        slot.height = stats.height;
+        slot.color = stats.color;
+        slot.hp = stats.hp;
+        slot.maxHp = stats.hp;
+        slot.speed = stats.speed;
+        slot.damage = stats.damage;
+        slot.score = stats.score;
+        slot.flying = stats.flying;
+        slot.ranged = stats.ranged;
+        slot.fireCooldown = stats.fireCooldown;
+        slot.fireTimer = isBoss ? 0.6 : 0.4 + Math.random() * 0.8;
+        slot.x = CANVAS_WIDTH + slot.radius + 8;
+        slot.y = slot.flying ? GROUND_Y - 120 : GROUND_Y;
+        slot.vx = 0;
+        slot.vy = 0;
+        slot.facing = -1;
+        slot.onGround = !slot.flying;
+        slot.walkPhase = Math.random() * Math.PI * 2;
+        slot.flash = 0;
+        slot.bob = 0;
+        slot.pulse = 1;
+        slot.squash = 1;
+        slot.stretch = 1;
+        slot.muzzle = 0;
+        slot.age = 0;
+        slot._chaseSpeed = stats.speed;
+        return slot;
+      },
+      update(dt, player, bullets) {
+        let scoreGain = 0;
+        for (const enemy of pool) {
+          if (!enemy.active) {
+            continue;
+          }
+          tickBossPulse(enemy, dt);
+          const dx = player.x - enemy.x;
+          const dir = dx === 0 ? -1 : Math.sign(dx);
+          enemy.facing = dir;
+          enemy.vx = dir * enemy.speed;
+
+          if (enemy.flying) {
+            const hoverY = GROUND_Y - 108 - Math.sin(enemy.age * 2.4) * 16;
+            const targetY = Math.abs(dx) < 170 ? player.y - enemy.height * 0.35 : hoverY;
+            enemy.y += (targetY - enemy.y) * Math.min(1, dt * 2.8);
+            enemy.x += enemy.vx * dt;
+            enemy.onGround = false;
+            tickHoverBob(enemy, dt);
+          } else {
+            enemy.x += enemy.vx * dt;
+            enemy.vy += PLAYER.gravity * dt;
+            enemy.y += enemy.vy * dt;
+            if (enemy.y >= GROUND_Y) {
+              enemy.y = GROUND_Y;
+              enemy.vy = 0;
+              enemy.onGround = true;
+            }
+            tickWalkBob(enemy, dt, enemy.speed / 16, 2.4);
+          }
+
+          tickFlashAndMuzzle(enemy, dt);
+          enemy.x = Math.max(enemy.radius + 4, Math.min(CANVAS_WIDTH - 8, enemy.x));
+
+          if (enemy.ranged) {
+            enemy.fireTimer -= dt;
+            if (enemy.fireTimer <= 0 && Math.abs(dx) < 540 && player.hp > 0) {
+              bullets.spawn({
+                x: enemy.x + enemy.facing * (enemy.radius + 6),
+                y: enemy.y - enemy.height * 0.55,
+                vx: enemy.facing * (enemy.isBoss ? 320 : 260),
+                vy: 0,
+                team: "enemy",
+                damage: Math.max(6, Math.round(enemy.damage * 0.65)),
+              });
+              enemy.fireTimer = enemy.fireCooldown;
+              enemy.muzzle = 0.08;
+            }
+          }
+
+          if (player.hp > 0 && cylindersOverlap(enemy, player)) {
+            hurtPlayer(player, enemy.damage);
+          }
+        }
+
+        bullets.eachActive((bullet) => {
+          if (!bullet.active) {
+            return;
+          }
+          if (bullet.team === "player") {
+            for (const enemy of pool) {
+              if (!enemy.active) {
+                continue;
+              }
+              if (circleHitsCylinder(bullet.x, bullet.y, bullet.radius, enemy)) {
+                bullet.active = false;
+                enemy.hp -= bullet.damage;
+                enemy.flash = 0.12;
+                if (enemy.hp <= 0) {
+                  enemy.active = false;
+                  scoreGain += enemy.score;
+                }
+                break;
+              }
+            }
+          } else if (player.hp > 0 && circleHitsCylinder(bullet.x, bullet.y, bullet.radius, player)) {
+            bullet.active = false;
+            hurtPlayer(player, bullet.damage);
+          }
+        });
+
+        return scoreGain;
+      },
+      draw(ctx) {
+        const ordered = live().sort((a, b) => a.y - b.y);
+        for (const enemy of ordered) {
+          drawActor(ctx, enemy);
+        }
+      },
+      clear() {
+        for (const enemy of pool) {
+          enemy.active = false;
+        }
+      },
+    };
+  }
+
+  DA.createEnemyManager = createEnemyManager;
+})(window.DA = window.DA || {});
+
+/* ===== stage.js ===== */
+(function (DA) {
+  const { STAGES } = DA;
+
+  function createStageController() {
+    return {
+      index: 1,
+      spawnedRegular: 0,
+      bossSpawned: false,
+      spawnTimer: 0.45,
+
+      def() {
+        return STAGES[this.index - 1];
+      },
+
+      reset(stageNumber) {
+        this.index = stageNumber;
+        this.spawnedRegular = 0;
+        this.bossSpawned = false;
+        this.spawnTimer = 0.45;
+      },
+
+      next() {
+        this.reset(Math.min(50, this.index + 1));
+      },
+
+      update(dt, enemies) {
+        const def = this.def();
+        this.spawnTimer -= dt;
+
+        if (this.spawnTimer <= 0 && this.spawnedRegular < def.regularCount) {
+          if (enemies.canSpawn()) {
+            const type = def.types[this.spawnedRegular % def.types.length];
+            enemies.spawn(type, { stage: this.index, isBoss: false });
+            this.spawnedRegular += 1;
+            this.spawnTimer = def.spawnInterval;
+          }
+        }
+
+        if (
+          this.spawnedRegular >= def.regularCount &&
+          !this.bossSpawned &&
+          enemies.liveCount() <= 2
+        ) {
+          if (enemies.canSpawn()) {
+            enemies.spawn(def.miniBossType, { stage: this.index, isBoss: true });
+            this.bossSpawned = true;
+          }
+        }
+      },
+
+      isCleared(enemies) {
+        const def = this.def();
+        return (
+          this.spawnedRegular >= def.regularCount &&
+          this.bossSpawned &&
+          enemies.liveCount() === 0
+        );
+      },
+    };
+  }
+
+  DA.createStageController = createStageController;
+})(window.DA = window.DA || {});
+
+/* ===== background.js ===== */
+(function (DA) {
+  const { CANVAS_HEIGHT, CANVAS_WIDTH, GROUND_HEIGHT, GROUND_Y } = DA;
+
+  function createBackground() {
+    return { t: 0 };
+  }
+
+  function updateBackground(bg, dt, playing) {
+    bg.t += dt * (playing ? 1 : 0.22);
+  }
+
+  function drawBackground(ctx, bg, biome) {
+    const sky = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    sky.addColorStop(0, biome.sky[0]);
+    sky.addColorStop(0.55, biome.sky[1]);
+    sky.addColorStop(1, biome.sky[2]);
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    drawLayer(ctx, bg.t * 18, 210, biome.building2, biome.window, 0.35, 90);
+    drawLayer(ctx, bg.t * 38, 160, biome.building, biome.window, 0.7, 70);
+
+    ctx.fillStyle = biome.fog;
+    ctx.fillRect(0, GROUND_Y - 80, CANVAS_WIDTH, 80);
+
+    ctx.fillStyle = biome.street;
+    ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, GROUND_HEIGHT);
+
+    ctx.fillStyle = biome.accent;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, 3);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    for (let i = 0; i < 8; i += 1) {
+      const x = ((i * 140 + bg.t * 90) % (CANVAS_WIDTH + 40)) - 20;
+      ctx.fillRect(x, GROUND_Y + 28, 46, 4);
+    }
+  }
+
+  function drawLayer(ctx, scroll, spacing, fill, windowColor, alpha, minH) {
+    ctx.globalAlpha = alpha;
+    const offset = scroll % spacing;
+    for (let i = -1; i < CANVAS_WIDTH / spacing + 2; i += 1) {
+      const x = i * spacing - offset;
+      const h = minH + ((i * 73 + 19) % 120);
+      const w = spacing * 0.62;
+      ctx.fillStyle = fill;
+      ctx.fillRect(x, GROUND_Y - h, w, h);
+
+      ctx.fillStyle = windowColor;
+      const cols = 3;
+      const rows = Math.max(2, Math.floor(h / 28));
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          if ((r + c + i) % 3 === 0) {
+            continue;
+          }
+          ctx.globalAlpha = alpha * 0.55;
+          ctx.fillRect(x + 10 + c * 18, GROUND_Y - h + 12 + r * 22, 8, 10);
+        }
+      }
+      ctx.globalAlpha = alpha;
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  DA.createBackground = createBackground; DA.updateBackground = updateBackground; DA.drawBackground = drawBackground;
+})(window.DA = window.DA || {});
+
+/* ===== hud.js ===== */
+(function (DA) {
+  const { CANVAS_WIDTH } = DA;
+
+  function drawHud(ctx, view) {
+    const { player, stage, score, biomeName, bossName } = view;
+
+    ctx.fillStyle = "rgba(0,0,0,0.4)";
+    ctx.fillRect(0, 0, CANVAS_WIDTH, 46);
+
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(16, 12, 180, 14);
+    const ratio = player.maxHp ? player.hp / player.maxHp : 0;
+    ctx.fillStyle = ratio > 0.35 ? "#3ecf6d" : "#e74c3c";
+    ctx.fillRect(16, 12, 180 * Math.max(0, ratio), 14);
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.strokeRect(16, 12, 180, 14);
+    ctx.fillStyle = "#f2f2f8";
+    ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(`HP ${Math.ceil(player.hp)}`, 20, 23);
+
+    ctx.textAlign = "center";
+    ctx.font = "bold 16px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillStyle = "#7ec8ff";
+    ctx.fillText(`STAGE ${stage} / 50`, CANVAS_WIDTH / 2, 22);
+    ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillStyle = "#c8c8d8";
+    ctx.fillText(biomeName, CANVAS_WIDTH / 2, 38);
+
+    ctx.textAlign = "right";
+    ctx.font = "bold 14px ui-sans-serif, system-ui, sans-serif";
+    ctx.fillStyle = "#ffe566";
+    ctx.fillText(`SCORE ${score}`, CANVAS_WIDTH - 16, 28);
+
+    if (bossName) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ff8a7a";
+      ctx.font = "bold 12px ui-sans-serif, system-ui, sans-serif";
+      const prefix = bossName === "The Kingpin" ? "BOSS" : "MINI-BOSS";
+      ctx.fillText(`${prefix}: ${bossName}`, CANVAS_WIDTH / 2, 58);
+    }
+  }
+
+  DA.drawHud = drawHud;
+})(window.DA = window.DA || {});
+
+/* ===== screens.js ===== */
+(function (DA) {
+  const { CANVAS_HEIGHT, CANVAS_WIDTH, TYPE_LEGEND } = DA;
+
+  function drawOverlay(ctx, mode, extra) {
+    ctx.fillStyle = "rgba(4, 4, 12, 0.62)";
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.textAlign = "center";
+
+    if (mode === "title") {
+      ctx.fillStyle = "#7ec8ff";
+      ctx.font = "bold 42px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("DEADLY ATTACK", CANVAS_WIDTH / 2, 150);
+      ctx.fillStyle = "#f2f2f8";
+      ctx.font = "18px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("The Neon Shadow — Neon Crime City, 2086", CANVAS_WIDTH / 2, 186);
+      ctx.font = "14px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillStyle = "#c8c8d8";
+      ctx.fillText(
+        "Ayan. 50 floors. The Kingpin waits at the bottom.",
+        CANVAS_WIDTH / 2,
+        220,
+      );
+
+      ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
+      const startX = 140;
+      TYPE_LEGEND.forEach((item, i) => {
+        const x = startX + i * 90;
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        ctx.ellipse(x, 300, 10, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ddd";
+        ctx.fillText(item.label, x, 328);
+      });
+      ctx.fillStyle = "#8b8ba0";
+      ctx.fillText("Color = type · bigger cylinder = boss", CANVAS_WIDTH / 2, 360);
+
+      ctx.fillStyle = "#ffe566";
+      ctx.font = "bold 16px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("Press Enter to start", CANVAS_WIDTH / 2, 430);
+      return;
+    }
+
+    if (mode === "cleared") {
+      ctx.fillStyle = "#3ecf6d";
+      ctx.font = "bold 40px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("STAGE CLEARED", CANVAS_WIDTH / 2, 230);
+      ctx.fillStyle = "#f2f2f8";
+      ctx.font = "16px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText(`Floor ${extra.stage} is down. Score ${extra.score}`, CANVAS_WIDTH / 2, 270);
+      ctx.fillStyle = "#ffe566";
+      ctx.fillText("Enter — next floor (auto in a moment)", CANVAS_WIDTH / 2, 320);
+      return;
+    }
+
+    if (mode === "gameover") {
+      ctx.fillStyle = "#e74c3c";
+      ctx.font = "bold 42px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("GAME OVER", CANVAS_WIDTH / 2, 230);
+      ctx.fillStyle = "#f2f2f8";
+      ctx.font = "16px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText(`Fell on stage ${extra.stage} · Score ${extra.score}`, CANVAS_WIDTH / 2, 270);
+      ctx.fillStyle = "#ffe566";
+      ctx.fillText("Press R to restart from stage 1", CANVAS_WIDTH / 2, 320);
+      return;
+    }
+
+    if (mode === "victory") {
+      ctx.fillStyle = "#ffd54a";
+      ctx.font = "bold 36px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("THE KINGPIN FALLS", CANVAS_WIDTH / 2, 220);
+      ctx.fillStyle = "#f2f2f8";
+      ctx.font = "16px ui-sans-serif, system-ui, sans-serif";
+      ctx.fillText("Neon Crime City is quiet. For now.", CANVAS_WIDTH / 2, 262);
+      ctx.fillText(`Final score ${extra.score}`, CANVAS_WIDTH / 2, 292);
+      ctx.fillStyle = "#ffe566";
+      ctx.fillText("Press R to run the 50 floors again", CANVAS_WIDTH / 2, 340);
+    }
+  }
+
+  DA.drawOverlay = drawOverlay;
+})(window.DA = window.DA || {});
+
+/* ===== main.js ===== */
+(function (DA) {
+  const { CANVAS_HEIGHT, CANVAS_WIDTH, ENEMY_TYPES, LIMITS, biomeFor, createBackground, drawBackground, updateBackground, createBulletPool, createEnemyManager, drawHud, createInput, createPlayer, drawPlayer, resetPlayer, updatePlayer, drawOverlay, createStageController } = DA;
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d", { alpha: false });
+
+  const input = createInput();
+  const player = createPlayer();
+  const enemies = createEnemyManager();
+  const bullets = createBulletPool();
+  const stage = createStageController();
+  const background = createBackground();
+
+  const game = {
+    mode: "title",
+    score: 0,
+    clearTimer: 0,
+  };
+
+  function startRun() {
+    game.mode = "playing";
+    game.score = 0;
+    game.clearTimer = 0;
+    resetPlayer(player);
+    enemies.clear();
+    bullets.clear();
+    stage.reset(1);
+  }
+
+  function restartSameRun() {
+    startRun();
+  }
+
+  function continueNextStage() {
+    if (stage.index >= 50) {
+      game.mode = "victory";
+      return;
+    }
+    stage.next();
+    enemies.clear();
+    bullets.clear();
+    player.hp = Math.min(player.maxHp, player.hp + 18);
+    player.invuln = 0.4;
+    game.mode = "playing";
+    game.clearTimer = 0;
+  }
+
+  function update(dt) {
+    const playing = game.mode === "playing";
+    updateBackground(background, dt, playing);
+
+    if (game.mode === "title" && input.pressed("Enter")) {
+      startRun();
+    }
+
+    if (game.mode === "cleared") {
+      game.clearTimer -= dt;
+      if (input.pressed("Enter") || game.clearTimer <= 0) {
+        continueNextStage();
+      }
+    }
+
+    if ((game.mode === "gameover" || game.mode === "victory") && input.pressed("KeyR")) {
+      restartSameRun();
+    }
+
+    if (game.mode === "playing" && input.pressed("KeyR")) {
+      restartSameRun();
+    }
+
+    if (game.mode !== "playing") {
+      return;
+    }
+
+    updatePlayer(player, dt, input, bullets);
+    stage.update(dt, enemies);
+    game.score += enemies.update(dt, player, bullets);
+    bullets.update(dt);
+
+    if (player.hp <= 0) {
+      game.mode = "gameover";
+      return;
+    }
+
+    if (stage.isCleared(enemies)) {
+      if (stage.index >= 50) {
+        game.mode = "victory";
+      } else {
+        game.mode = "cleared";
+        game.clearTimer = 2.2;
+      }
+    }
+  }
+
+  function draw() {
+    const biome = biomeFor(stage.index);
+    drawBackground(ctx, background, biome);
+
+    if (game.mode !== "title") {
+      enemies.draw(ctx);
+      bullets.draw(ctx);
+      drawPlayer(ctx, player);
+      const def = stage.def();
+      drawHud(ctx, {
+        player,
+        stage: stage.index,
+        score: game.score,
+        biomeName: biome.name,
+        bossName: enemies.hasBoss() ? ENEMY_TYPES[def.miniBossType].name : "",
+      });
+    }
+
+    if (game.mode !== "playing") {
+      drawOverlay(ctx, game.mode, { stage: stage.index, score: game.score });
+    }
+  }
+
+  let last = performance.now();
+
+  function loop(now) {
+    const dt = Math.min(LIMITS.maxDt, (now - last) / 1000);
+    last = now;
+    update(dt);
+    draw();
+    input.endFrame();
+    requestAnimationFrame(loop);
+  }
+
+  ctx.fillStyle = "#07070f";
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  requestAnimationFrame(loop);
+})(window.DA = window.DA || {});
+
+    </script>
+  </body>
+</html>
