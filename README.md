@@ -1,5 +1,9 @@
 ﻿# PocketBudget CLI
 
+**Live demo:** https://mohammadrefayethossainmina.github.io/pocketbudget-cli-v2/
+
+The page loads `pocketbudget/account.py` and `storage.py` in the browser (Pyodide) so a recruiter can add income, expenses, and budgets without installing Python. The terminal CLI is unchanged.
+
 A simple personal finance app you run in the terminal. You can add income, log expenses, set category budgets, check your balance, and keep everything saved in a local JSON file.
 
 Repo: https://github.com/MohammadRefayetHossainMina/pocketbudget-cli-v2

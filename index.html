@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PocketBudget CLI — Mohammad Refayet Hossain Mina</title>
+    <meta
+      name="description"
+      content="Live demo of PocketBudget CLI. The page loads pocketbudget/account.py and storage.py in the browser so you can add income, expenses, and budgets without installing Python."
+    />
+    <meta name="theme-color" content="#1b3a4b" />
+    <meta property="og:title" content="PocketBudget CLI — Mohammad Refayet Hossain Mina" />
+    <meta
+      property="og:description"
+      content="Python personal-finance CLI with domain, storage, and tests — playable in the browser."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mohammadrefayethossainmina.github.io/pocketbudget-cli-v2/" />
+    <link rel="canonical" href="https://mohammadrefayethossainmina.github.io/pocketbudget-cli-v2/" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.27.6/full/pyodide.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#demo">Skip to the demo</a>
+
+    <header class="topbar">
+      <div class="identity">
+        <span class="mark" aria-hidden="true">$</span>
+        <div>
+          <p class="name">Mohammad Refayet Hossain Mina</p>
+          <p class="role">Junior Software Developer · Ryde, NSW</p>
+        </div>
+      </div>
+      <nav class="links" aria-label="Profile links">
+        <a href="https://www.linkedin.com/in/mohammad-mina-667576417" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a href="https://github.com/MohammadRefayetHossainMina/pocketbudget-cli-v2" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/MohammadRefayetHossainMina/pocketbudget-cli-v2/blob/main/pocketbudget/account.py" target="_blank" rel="noopener noreferrer">account.py</a>
+      </nav>
+    </header>
+
+    <p id="boot-status" class="status" role="status">Loading Python so this page can run pocketbudget/account.py…</p>
+
+    <main class="layout">
+      <section class="panel about">
+        <p class="eyebrow">Python project · pytest · JSON</p>
+        <h1>PocketBudget CLI</h1>
+        <p class="lede">
+          A terminal personal-finance app with separate domain, storage, and CLI layers.
+          This page loads the same Python files in your browser — balance rules, custom errors,
+          and JSON save/load are not reimplemented in JavaScript.
+        </p>
+        <ul class="tags" aria-label="Technologies">
+          <li>Python</li>
+          <li>pytest (26 tests)</li>
+          <li>JSON</li>
+          <li>GitHub Pages</li>
+        </ul>
+        <h2>What this shows</h2>
+        <ul class="bullets">
+          <li>Balance is private — you cannot assign <code>account.balance</code> directly</li>
+          <li>Overdrafts, zero amounts, and unknown categories raise typed errors and leave state unchanged</li>
+          <li>Expenses over $100 need confirmation, matching the CLI <code>--confirm</code> flag</li>
+          <li>Storage rebuilds an account through public methods, so a corrupt file cannot quietly load a wrong balance</li>
+        </ul>
+        <p class="note">Demo uses the made-up sample in <code>data/budget.json</code>. Do not enter real bank details.</p>
+      </section>
+
+      <section id="demo" class="panel demo">
+        <div class="balance-card">
+          <span>Balance</span>
+          <strong id="balance">$0.00</strong>
+        </div>
+        <p id="flash" class="flash" role="status">Waiting for Python…</p>
+
+        <form id="form-income" class="row">
+          <h2>add-income</h2>
+          <label>Amount <input name="amount" type="number" min="0.01" step="0.01" value="100" required /></label>
+          <label>
+            Category
+            <select name="category">
+              <option>Salary</option>
+              <option>Food</option>
+              <option>Transport</option>
+              <option>Bill</option>
+            </select>
+          </label>
+          <button type="submit" disabled>Record income</button>
+        </form>
+
+        <form id="form-expense" class="row">
+          <h2>add-expense</h2>
+          <label>Amount <input name="amount" type="number" min="0.01" step="0.01" value="20" required /></label>
+          <label>
+            Category
+            <select name="category">
+              <option>Food</option>
+              <option>Transport</option>
+              <option>Bill</option>
+              <option>Salary</option>
+            </select>
+          </label>
+          <label class="check"><input name="confirm" type="checkbox" /> Confirm if over $100</label>
+          <button type="submit" disabled>Record expense</button>
+        </form>
+
+        <form id="form-budget" class="row">
+          <h2>set-budget</h2>
+          <label>
+            Category
+            <select name="category">
+              <option>Food</option>
+              <option>Transport</option>
+              <option>Bill</option>
+              <option>Salary</option>
+            </select>
+          </label>
+          <label>Limit <input name="limit" type="number" min="0.01" step="0.01" value="200" required /></label>
+          <button type="submit" disabled>Set budget</button>
+        </form>
+
+        <div class="try-row">
+          <button type="button" id="btn-overdraft" class="ghost" disabled>Try overdraft ($9,999)</button>
+          <button type="button" id="btn-large" class="ghost" disabled>Try $150 without confirm</button>
+          <button type="button" id="btn-reset" class="ghost" disabled>Reload sample data</button>
+        </div>
+
+        <h2>show-summary</h2>
+        <div id="summary" class="summary"></div>
+
+        <h2>show-history</h2>
+        <ol id="history" class="history"></ol>
+      </section>
+
+      <aside class="panel hud">
+        <h2>Same CLI on your machine</h2>
+        <pre class="term">python -m pocketbudget.cli add-income 1000 Salary
+python -m pocketbudget.cli add-expense 45 Food
+python -m pocketbudget.cli add-expense 150 Transport --confirm
+python -m pocketbudget.cli set-budget Food 200
+python -m pocketbudget.cli show-balance
+python -m pocketbudget.cli show-history
+python -m pocketbudget.cli show-summary
+pytest -v</pre>
+        <h2>Rules from rules.md</h2>
+        <ul class="bullets compact">
+          <li>AUD, shown as $</li>
+          <li>Categories: Food, Transport, Salary, Bill</li>
+          <li>Balance cannot go below $0</li>
+          <li>Over $100 needs confirmation</li>
+          <li>Near/over category budget is a warning, not a block</li>
+        </ul>
+        <p class="note">
+          Source:
+          <a href="https://github.com/MohammadRefayetHossainMina/pocketbudget-cli-v2/tree/main/pocketbudget" target="_blank" rel="noopener noreferrer">pocketbudget/</a>
+          ·
+          <a href="https://github.com/MohammadRefayetHossainMina/pocketbudget-cli-v2/tree/main/tests" target="_blank" rel="noopener noreferrer">tests/</a>
+        </p>
+      </aside>
+    </main>
+
+    <footer class="foot">
+      Built by Mohammad Refayet Hossain Mina ·
+      <a href="https://github.com/MohammadRefayetHossainMina" target="_blank" rel="noopener noreferrer">GitHub</a>
+      · Eligible to work in Australia
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
